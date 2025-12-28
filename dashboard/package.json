@@ -17,7 +17,8 @@
     "react-dom": "18",
     "zod": "4",
     "uuid": "9",
-    "ioredis": "5"
+    "ioredis": "5",
+    "jsonwebtoken": "9"
   },
   "devDependencies": {
     "@types/jest": "29",

@@ -62,6 +62,13 @@ export default function AuditAdmin() {
           <option value={20}>20</option>
           <option value={50}>50</option>
         </select>
+        <button style={{ marginLeft: 12 }} onClick={() => {
+          const params = new URLSearchParams({ page: String(page), limit: String(limit) })
+          if (filterAction) params.set('action', filterAction)
+          if (filterActor) params.set('actor', filterActor)
+          const url = `/api/admin/audit.csv?${params.toString()}`
+          window.open(url, '_blank')
+        }}>Export CSV</button>
       </div>
     </main>
   )
