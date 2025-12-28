@@ -50,6 +50,22 @@ Notes:
 - If Docker is unavailable, you can still run the Next dev server and test validation/auth flows, but DB insertions will return `Database not configured` until Postgres is running.
 - Admin UI: `pages/admin/keys` is protected by `ADMIN_SECRET` (server); in browser set `NEXT_PUBLIC_ADMIN_SECRET` to the same value for the demo UI to call the admin APIs.
 
+SSO (JWKS) configuration:
+- You can configure the dashboard to accept JWT-based SSO tokens by setting one of the following environment variables:
+  - `ADMIN_JWKS_URI` — URL to the provider JWKS (e.g., Auth0 `https://<domain>/.well-known/jwks.json`) (preferred)
+  - `ADMIN_JWT_PUBLIC_KEY` — static PEM public key (fallback)
+  - Optional: `ADMIN_JWT_ISS` and `ADMIN_JWT_AUD` to validate issuer and audience
+
+Auth0 example (environment variables):
+- `ADMIN_JWKS_URI=https://YOUR_AUTH0_DOMAIN/.well-known/jwks.json`
+- `ADMIN_JWT_ISS=https://YOUR_AUTH0_DOMAIN/`
+- `ADMIN_JWT_AUD=YOUR_API_AUDIENCE`
+
+Okta example (environment variables):
+- `ADMIN_JWKS_URI=https://YOUR_OKTA_DOMAIN/oauth2/default/v1/keys`
+- `ADMIN_JWT_ISS=https://YOUR_OKTA_DOMAIN/oauth2/default`
+- `ADMIN_JWT_AUD=api://default`
+
 API endpoints:
 - POST `/api/events` — accepts telemetry event JSON (see `docs/telemetry.md` for schema). Requires `Authorization: Bearer <INGEST_API_KEY>` if `INGEST_API_KEY` is set in the environment.
 - GET `/api/stats` — basic aggregation for dashboard.
