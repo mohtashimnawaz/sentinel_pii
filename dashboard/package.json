@@ -6,13 +6,27 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "migrate": "node ./scripts/migrate.js"
+    "migrate": "node ./scripts/migrate.js",
+    "test": "jest --runInBand"
   },
   "dependencies": {
     "next": "14",
     "react": "18",
     "react-dom": "18",
     "pg": "8",
-    "dotenv": "16"
+    "dotenv": "16",
+    "zod": "4"
+  },
+  "devDependencies": {
+    "jest": "29",
+    "ts-jest": "29",
+    "@types/jest": "29",
+    "@types/node": "20"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "moduleFileExtensions": ["ts", "tsx", "js", "jsx"],
+    "testMatch": ["**/__tests__/**/*.test.ts"]
   }
 }
