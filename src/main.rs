@@ -8,6 +8,7 @@ use std::time::Duration;
 
 mod scanner;
 mod context;
+mod telemetry;
 
 const REDACT_TEXT: &str = "[[ SENTINEL BLOCKED: Secret Detected ]]";
 
@@ -25,6 +26,18 @@ struct Args {
     /// Send native desktop notifications on block (default: true)
     #[arg(long, default_value_t = true)]
     notify: bool,
+
+    /// Enable telemetry (opt-in). When enabled, `--telemetry-url` must be provided.
+    #[arg(long, default_value_t = false)]
+    telemetry: bool,
+
+    /// Telemetry ingest URL (HTTP/HTTPS)
+    #[arg(long)]
+    telemetry_url: Option<String>,
+
+    /// Telemetry API key (optional)
+    #[arg(long)]
+    telemetry_api_key: Option<String>,
 
     /// Comma-separated denylist of app names (case-insensitive substring match). If empty, old behavior (always redact) applies.
     #[arg(long, value_delimiter = ',')]
@@ -48,6 +61,16 @@ fn main() -> Result<()> {
     })?;
 
     let mut clipboard = Clipboard::new()?;
+
+    // Setup telemetry client
+    let tele_cfg = {
+        let mut c = crate::telemetry::TelemetryConfig::default();
+        c.enabled = args.telemetry;
+        c.url = args.telemetry_url.clone();
+        c.api_key = args.telemetry_api_key.clone();
+        c
+    };
+    let telemetry = crate::telemetry::Telemetry::new(tele_cfg);
 
     let mut last_clipboard: Option<String> = None;
 
@@ -100,6 +123,12 @@ fn main() -> Result<()> {
                                         .show() {
                                         log::error!("Failed to send notification: {}", e);
                                     }
+                                }
+
+                                // Telemetry: record the block event (best-effort)
+                                let ev = telemetry.make_event(secret_kind, "blocked", active_app.clone(), Some("denylist-default".to_string()));
+                                if let Err(e) = telemetry.queue_event(ev) {
+                                    log::warn!("Failed to queue telemetry event: {}", e);
                                 }
                             }
                         } else {
