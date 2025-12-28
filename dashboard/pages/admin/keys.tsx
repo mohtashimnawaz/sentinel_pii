@@ -52,7 +52,10 @@ export default function KeysAdmin() {
       <h2>Existing keys</h2>
       <ul>
         {keys.map(k => (
-          <li key={k.id}>{k.name} — {k.enabled ? 'enabled' : 'disabled'} — {k.created_at}</li>
+          <li key={k.id}>
+            {k.name} — {k.enabled ? 'enabled' : 'disabled'} — {k.created_at}
+            <button style={{ marginLeft: 8 }} onClick={() => rotateKey(k.id)}>Regenerate</button>
+          </li>
         ))}
       </ul>
       {error && <div style={{ color: 'red' }}>{error}</div>}

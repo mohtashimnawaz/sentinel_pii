@@ -15,9 +15,12 @@ async function migrate() {
   const schema = fs.readFileSync('./sql/schema.sql', 'utf8');
   await client.query(schema);
 
-  // Run additional migrations (ingest keys table)
+  // Run additional migrations (ingest keys table and audit logs)
   const ingest = fs.readFileSync('./sql/add_ingest_keys.sql', 'utf8');
   await client.query(ingest);
+
+  const audit = fs.readFileSync('./sql/add_audit_logs.sql', 'utf8');
+  await client.query(audit);
   await client.end();
   console.log('Migration complete');
 }

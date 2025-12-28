@@ -32,11 +32,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return
       }
 
-      const token = crypto.randomBytes(32).toString('hex')
-      const hash = crypto.createHash('sha256').update(token).digest('hex')
-
       const name = parsed.data.name
-      await client.query('INSERT INTO ingest_keys(name, key_hash, enabled) VALUES($1,$2,TRUE)', [name, hash])
+      const token = await import('../../../lib/adminActions').then(m => m.createIngestKey(client, name, req.headers['authorization'] || undefined))
       // Return the plaintext token ONLY at creation time
       res.status(201).json({ token })
       return
@@ -50,7 +47,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return
       }
       await client.query('UPDATE ingest_keys SET enabled = $1 WHERE id = $2', [enabled, id])
+      const details = { id, enabled }
+      await client.query('INSERT INTO audit_logs(actor, action, details) VALUES($1,$2,$3)', [req.headers['authorization'] || null, 'TOGGLE_KEY', JSON.stringify(details)])
       res.status(200).json({ ok: true })
+      return
+    }
+
+    // Support rotate via POST to /api/admin/keys?rotate=1 (alternative to separate endpoint)
+    if (req.method === 'POST' && req.query.rotate === '1') {
+      const { id } = req.body as { id?: string }
+      if (!id) {
+        res.status(400).json({ error: 'Missing id to rotate' })
+        return
+      }
+      const token = await import('../../../lib/adminActions').then(m => m.rotateIngestKey(client, id, req.headers['authorization'] || undefined))
+      res.status(200).json({ token })
       return
     }
 
