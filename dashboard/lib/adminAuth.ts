@@ -11,12 +11,13 @@ export async function isAdminAuthorizedAsync(req: any, adminSecret?: string): Pr
   // Next, verify via JWKS URI
   const jwksUri = process.env.ADMIN_JWKS_URI
   if (jwksUri && token) {
+    let kid: string | undefined = undefined
     try {
       const decodedHeader = jwt.decode(token, { complete: true }) as any
       if (!decodedHeader || !decodedHeader.header || !decodedHeader.header.kid) {
         return false
       }
-      const kid = decodedHeader.header.kid
+      kid = decodedHeader.header.kid
       const key = await getSigningKey(kid, jwksUri)
 
       // Optional issuer/audience checks
@@ -29,7 +30,7 @@ export async function isAdminAuthorizedAsync(req: any, adminSecret?: string): Pr
         return true
       }
     } catch (e: any) {
-      console.error('JWT/JWKS verification failed', e.message || e)
+      auditJwksFailure(e, { kid })
       return false
     }
   }
@@ -43,7 +44,7 @@ export async function isAdminAuthorizedAsync(req: any, adminSecret?: string): Pr
         return true
       }
     } catch (e: any) {
-      console.error('JWT verification failed', e.message || e)
+      auditJwksFailure(e)
       return false
     }
   }
@@ -67,4 +68,17 @@ export async function ensureAdminOr401(req: any, res: any): Promise<boolean> {
   if (await isAdminAuthorizedAsync(req, process.env.ADMIN_SECRET)) return true
   res.status(401).json({ error: 'Unauthorized' })
   return false
+}
+
+// Centralized audit/metrics hook for JWKS/JWT verification failures.
+// For now we log a structured message; this function can be extended to push
+// metrics or write to an audit table in the future.
+export function auditJwksFailure(err: any, info?: any) {
+  const msg = err && err.message ? err.message : String(err)
+  try {
+    console.error('AUDIT_JWKS_FAILURE', msg, info || null)
+  } catch (e) {
+    // best-effort logging
+    console.error('AUDIT_JWKS_FAILURE', msg)
+  }
 }
