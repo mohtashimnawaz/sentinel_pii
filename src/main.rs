@@ -9,7 +9,7 @@ use std::time::Duration;
 mod scanner;
 mod context;
 
-const REDACT_TEXT: &str = "[REDACTED: Secret Key Detected]";
+const REDACT_TEXT: &str = "[[ SENTINEL BLOCKED: Secret Detected ]]";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Sentinel PII - Phase 2: Context-aware Clip-Clear", long_about = None)]
@@ -21,6 +21,10 @@ struct Args {
     /// Dry run: do not modify the clipboard
     #[arg(long, default_value_t = false)]
     dry_run: bool,
+
+    /// Send native desktop notifications on block (default: true)
+    #[arg(long, default_value_t = true)]
+    notify: bool,
 
     /// Comma-separated denylist of app names (case-insensitive substring match). If empty, old behavior (always redact) applies.
     #[arg(long, value_delimiter = ',')]
@@ -54,48 +58,57 @@ fn main() -> Result<()> {
                     log::debug!("Clipboard changed: len={}", text.len());
                     last_clipboard = Some(text.clone());
 
-                    if scanner::contains_secret(&text) {
-                        log::warn!("Secret detected in clipboard");
+                    if let Some(secret_kind) = scanner::detect_secret_type(&text) {
+                        log::warn!("Secret detected in clipboard (type={})", secret_kind);
 
-                        // Check context (active app) to decide whether to redact.
+                        // Build which denylist to use: if the user provided neither list, use a sensible default denylist
+                        let effective_denylist: Vec<String> = if args.denylist.is_empty() && args.allowlist.is_empty() {
+                            // Default unsafe targets: browsers and chat apps
+                            vec![
+                                "chrome".to_string(),
+                                "safari".to_string(),
+                                "firefox".to_string(),
+                                "slack".to_string(),
+                                "discord".to_string(),
+                                "chatgpt".to_string(),
+                                "teams".to_string(),
+                            ]
+                        } else {
+                            args.denylist.clone()
+                        };
+
                         let active_app = context::get_active_app();
-                        let mut should_redact = true;
-
-                        if !args.allowlist.is_empty() {
-                            if let Some(ref app) = active_app {
-                                if args.allowlist.iter().any(|a| context::matches_app(app, a)) {
-                                    should_redact = false;
-                                    log::info!("Active app '{}' matches allowlist; skipping redaction", app);
-                                }
-                            }
-                        }
-
-                        if !args.denylist.is_empty() {
-                            // If denylist present, we redact only when active app matches denylist.
-                            should_redact = false;
-                            if let Some(ref app) = active_app {
-                                if args.denylist.iter().any(|a| context::matches_app(app, a)) {
-                                    should_redact = true;
-                                    log::info!("Active app '{}' matches denylist; will redact", app);
-                                } else {
-                                    log::info!("Active app '{}' not in denylist; not redacting", app);
-                                }
-                            } else {
-                                log::info!("Active app unknown; not redacting when denylist is set");
-                            }
-                        }
+                        let should_redact = context::should_redact(active_app.as_deref(), &effective_denylist, &args.allowlist);
 
                         if args.dry_run {
                             log::info!("dry-run: not overwriting clipboard (should_redact={})", should_redact);
                         } else if should_redact {
-                            if let Err(e) = clipboard.set_text(REDACT_TEXT.to_string()) {
+                            // Customize message to include secret type
+                            let msg = format!("[[ SENTINEL BLOCKED: {} Secret Detected ]]", secret_kind);
+
+                            if let Err(e) = clipboard.set_text(msg.clone()) {
                                 log::error!("Failed to overwrite clipboard: {}", e);
                             } else {
-                                log::info!("Clipboard overwritten with redaction");
+                                log::info!("Clipboard overwritten with redaction: {}", secret_kind);
+
+                                if args.notify {
+                                    // Send a native notification to inform the user
+                                    let body = format!("A {} secret was detected in the clipboard and was blocked.", secret_kind);
+                                    if let Err(e) = notify_rust::Notification::new()
+                                        .summary("Sentinel: Paste Blocked")
+                                        .body(&body)
+                                        .show() {
+                                        log::error!("Failed to send notification: {}", e);
+                                    }
+                                }
                             }
                         } else {
                             // Not redacting due to context
-                            log::info!("Detected secret, but skipping redaction due to context");
+                            if let Some(app) = active_app {
+                                log::info!("Detected {} secret, but skipping redaction for active app '{}'", secret_kind, app);
+                            } else {
+                                log::info!("Detected {} secret, but skipping redaction (active app unknown)", secret_kind);
+                            }
                         }
                     }
                 }
