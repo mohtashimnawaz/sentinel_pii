@@ -57,13 +57,38 @@ impl Telemetry {
             return Ok(());
         }
 
-        let mut f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.cfg.queue_file)?;
+        // Ensure directory exists
+        if let Some(parent) = self.cfg.queue_file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
 
-        let line = serde_json::to_string(&event)?;
-        writeln!(f, "{}", line)?;
+        // Create file with restrictive permissions when possible
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)
+                .open(&self.cfg.queue_file)?;
+
+            let line = serde_json::to_string(&event)?;
+            writeln!(f, "{}", line)?;
+        }
+
+        #[cfg(not(unix))]
+        {
+            let mut f = OpenOptions::new().create(true).append(true).open(&self.cfg.queue_file)?;
+            let line = serde_json::to_string(&event)?;
+            writeln!(f, "{}", line)?;
+        }
+
+        // Rotate if file too large
+        self.rotate_if_needed()?;
+
+        // Prune old events
+        self.prune_old_events()?;
+
         Ok(())
     }
 
@@ -148,6 +173,101 @@ impl Telemetry {
             }
         }
         None
+    }
+
+    /// Rotate the queue file if it exceeds MAX_QUEUE_BYTES. Rotation renames the current file
+    /// to `{queue_file}.{timestamp}.old` and creates a new empty queue file with restrictive
+    /// permissions when possible.
+    pub fn rotate_if_needed(&self) -> std::io::Result<()> {
+        const MAX_QUEUE_BYTES: u64 = 1_000_000; // 1 MB
+
+        let meta = match std::fs::metadata(&self.cfg.queue_file) {
+            Ok(m) => m,
+            Err(_) => return Ok(()), // nothing to rotate
+        };
+
+        if meta.len() <= MAX_QUEUE_BYTES {
+            return Ok(());
+        }
+
+        let ts = Utc::now().format("%Y%m%d%H%M%S").to_string();
+        let mut rotated = self.cfg.queue_file.clone();
+        rotated.set_extension(format!("{}.old", ts));
+        std::fs::rename(&self.cfg.queue_file, &rotated)?;
+
+        // Create new empty file with secure perms
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            OpenOptions::new().create(true).write(true).mode(0o600).open(&self.cfg.queue_file)?;
+        }
+        #[cfg(not(unix))]
+        {
+            OpenOptions::new().create(true).write(true).open(&self.cfg.queue_file)?;
+        }
+
+        log::info!("Rotated telemetry queue to {:?}", rotated);
+        Ok(())
+    }
+
+    /// Prune events older than MAX_AGE_DAYS from the queue file. This reads all events and
+    /// re-writes only recent events back into the queue file atomically.
+    pub fn prune_old_events(&self) -> std::io::Result<()> {
+        const MAX_AGE_DAYS: i64 = 30;
+        let cutoff = Utc::now() - chrono::Duration::days(MAX_AGE_DAYS);
+
+        let f = match OpenOptions::new().read(true).open(&self.cfg.queue_file) {
+            Ok(f) => f,
+            Err(_) => return Ok(()),
+        };
+
+        let reader = BufReader::new(f);
+        let mut keep: Vec<String> = Vec::new();
+
+        for line in reader.lines() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(ts) = v.get("timestamp").and_then(|t| t.as_str()) {
+                    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(ts) {
+                        if t.with_timezone(&Utc) >= cutoff {
+                            keep.push(line);
+                        }
+                        continue;
+                    }
+                }
+            }
+            // If we can't parse timestamp, keep by default
+            keep.push(line);
+        }
+
+        // Write back atomically
+        let mut temp = self.cfg.queue_file.clone();
+        temp.set_extension("tmp");
+        {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                let mut f = OpenOptions::new().create(true).write(true).mode(0o600).open(&temp)?;
+                for l in &keep {
+                    writeln!(f, "{}", l)?;
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let mut f = OpenOptions::new().create(true).write(true).open(&temp)?;
+                for l in &keep {
+                    writeln!(f, "{}", l)?;
+                }
+            }
+        }
+
+        std::fs::rename(&temp, &self.cfg.queue_file)?;
+        log::info!("Pruned telemetry queue; kept {} events", keep.len());
+
+        Ok(())
     }
 }
 
