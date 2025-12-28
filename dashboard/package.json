@@ -15,7 +15,7 @@
     "react-dom": "18",
     "pg": "8",
     "dotenv": "16",
-    "zod": "4",
+    "zod": "4"
   },
   "devDependencies": {
     "jest": "29",

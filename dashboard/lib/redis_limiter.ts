@@ -1,9 +1,9 @@
-import Redis from 'ioredis'
+// Use a dynamic `any` type here to avoid requiring `ioredis` in tests/environments
 
 const WINDOW = 60 // seconds
 const MAX_PER_WINDOW = 120
 
-export async function allowRequestRedis(redis: Redis, key: string): Promise<boolean> {
+export async function allowRequestRedis(redis: any, key: string): Promise<boolean> {
   const k = `rate:${key}`
   try {
     const v = await redis.incr(k)

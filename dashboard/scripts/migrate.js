@@ -11,8 +11,13 @@ async function migrate() {
 
   const client = new Client({ connectionString: url });
   await client.connect();
-  const sql = fs.readFileSync('./sql/schema.sql', 'utf8');
-  await client.query(sql);
+  // Run main schema
+  const schema = fs.readFileSync('./sql/schema.sql', 'utf8');
+  await client.query(schema);
+
+  // Run additional migrations (ingest keys table)
+  const ingest = fs.readFileSync('./sql/add_ingest_keys.sql', 'utf8');
+  await client.query(ingest);
   await client.end();
   console.log('Migration complete');
 }
