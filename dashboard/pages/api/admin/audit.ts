@@ -1,10 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { Client } from 'pg'
-import { isAdminAuthorizedAsync } from '../../../lib/adminAuth'
+import { ensureAdminOr401 } from '../../../lib/adminAuth'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!(await isAdminAuthorizedAsync(req, process.env.ADMIN_SECRET))) {
-    res.status(401).json({ error: 'Unauthorized' })
+  if (!(await ensureAdminOr401(req, res))) {
     return
   }
 

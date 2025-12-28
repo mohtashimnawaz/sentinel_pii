@@ -1,14 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { Client } from 'pg'
 import crypto from 'crypto'
-import { isAdminAuthorizedAsync } from '../../../lib/adminAuth'
+import { isAdminAuthorizedAsync, ensureAdminOr401 } from '../../../lib/adminAuth'
 import { z } from 'zod'
 
 const CreateSchema = z.object({ name: z.string().min(1).max(100) })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!(await isAdminAuthorizedAsync(req, process.env.ADMIN_SECRET))) {
-    res.status(401).json({ error: 'Unauthorized' })
+  if (!(await ensureAdminOr401(req, res))) {
     return
   }
 

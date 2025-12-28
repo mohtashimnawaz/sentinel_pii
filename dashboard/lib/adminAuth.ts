@@ -61,3 +61,10 @@ export function isAdminAuthorized(req: any, adminSecret?: string): boolean {
   console.warn('isAdminAuthorized called synchronously — JWT/JWKS checks require async path; call isAdminAuthorizedAsync when possible')
   return false
 }
+
+// Helper to use from handlers that centralizes the 401 response
+export async function ensureAdminOr401(req: any, res: any): Promise<boolean> {
+  if (await isAdminAuthorizedAsync(req, process.env.ADMIN_SECRET)) return true
+  res.status(401).json({ error: 'Unauthorized' })
+  return false
+}

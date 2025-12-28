@@ -15,7 +15,7 @@ test('audit API returns rows and total and respects pagination', async () => {
   const req = httpMocks.createRequest({ method: 'GET', query: { page: '1', limit: '10' }, headers: { authorization: 'Bearer secret' } })
   const res = httpMocks.createResponse()
   // Mock admin authorized
-  jest.spyOn(require('../lib/adminAuth'), 'isAdminAuthorizedAsync').mockResolvedValue(true)
+  jest.spyOn(require('../lib/adminAuth'), 'ensureAdminOr401').mockResolvedValue(true)
 
   await handler(req as any, res as any)     
   expect(res.statusCode).toBe(200)
