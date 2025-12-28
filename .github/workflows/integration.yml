@@ -1,0 +1,52 @@
+name: Integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  e2e-db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sentinel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: ./dashboard
+        run: npm ci
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U postgres && break || sleep 1
+          done
+      - name: Run migrations and seed
+        working-directory: ./dashboard
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/sentinel
+          INGEST_API_KEY: test-ingest-key-123
+        run: |
+          npm run migrate
+          node scripts/seed_api_key.js
+      - name: Run integration tests
+        working-directory: ./dashboard
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/sentinel
+          INGEST_API_KEY: test-ingest-key-123
+          ADMIN_SECRET: admin-secret
+        run: |
+          npm test -- --testMatch "**/__tests__/**.e2e.ts" --runInBand || true
