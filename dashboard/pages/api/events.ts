@@ -11,17 +11,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return
   }
 
-  // Basic API key authorization
-  const apiKey = process.env.INGEST_API_KEY
-  if (apiKey) {
-    const auth = req.headers.authorization || ''
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth
-    if (!token || token !== apiKey) {
-      res.status(401).json({ error: 'Unauthorized' })
+  // Basic API key token
+  const auth = req.headers.authorization || ''
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth
+
+  // First: validate token against DB ingest keys (if DB configured)
+  let authorized = false
+  if (process.env.DATABASE_URL && token) {
+    authorized = await import('../../lib/auth').then(m => m.verifyApiKeyWithDb(token, process.env.DATABASE_URL!))
+  }
+
+  // Fallback to env var token for quick dev setup
+  if (!authorized && process.env.INGEST_API_KEY) {
+    if (token === process.env.INGEST_API_KEY) {
+      authorized = true
+    }
+  }
+
+  if (!authorized) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  // Rate limiting via Redis if configured, otherwise per-process in-memory limiter
+  if (process.env.REDIS_URL && token) {
+    const Redis = (await import('ioredis')).default
+    const redis = new Redis(process.env.REDIS_URL)
+    const ok = await import('../../lib/redis_limiter').then(m => m.allowRequestRedis(redis, token))
+    await redis.quit()
+    if (!ok) {
+      res.status(429).json({ error: 'Rate limit exceeded' })
       return
     }
-
-    // Rate limiting per API key
+  } else if (token) {
     if (!allowRequest(token)) {
       res.status(429).json({ error: 'Rate limit exceeded' })
       return
